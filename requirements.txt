@@ -1,0 +1,32 @@
+# Core dependencies for SAM + XMem benchmark
+numpy
+scikit-image
+opencv-python
+tqdm
+Pillow
+
+# Optional visualization dependencies
+matplotlib
+pandas
+seaborn
+
+# SAM dependencies
+segment-anything
+
+# Development and testing
+pytest
+
+# Model-specific dependencies (optional for comparison)
+cellpose
+stardist
+pytest-cov
+black
+flake8
+
+# Documentation
+sphinx
+sphinx-rtd-theme
+
+# Additional scientific computing
+scipy
+numba
