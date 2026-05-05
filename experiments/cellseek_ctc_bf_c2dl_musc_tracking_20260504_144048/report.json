@@ -1,0 +1,15 @@
+{
+  "ctc_bf_c2dl_musc": {
+    "cellseek": {
+      "tracking": {
+        "HOTA": 0.12517879431235587,
+        "DetA": 0.03177776048549011,
+        "AssA": 0.5701679569919889,
+        "TA": 0.12517879431235587,
+        "n_sequences_total": 2,
+        "n_sequences_scored": 2,
+        "n_sequences_error": 0
+      }
+    }
+  }
+}

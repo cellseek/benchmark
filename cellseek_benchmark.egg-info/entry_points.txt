@@ -1,0 +1,2 @@
+[console_scripts]
+csbench = cellseek_benchmark.test:main

@@ -1,0 +1,9 @@
+numpy<2
+pandas
+scipy
+scikit-image
+pyyaml
+tqdm
+tifffile
+opencv-python<4.11
+motmetrics

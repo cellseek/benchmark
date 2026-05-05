@@ -1,0 +1,297 @@
+Metadata-Version: 2.4
+Name: cellseek-benchmark
+Version: 0.1.0
+Summary: Benchmark CellSeek and related models on microscopy datasets.
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# CellSeek Benchmark
+
+`cellseek_benchmark` is a unified benchmark repository under `cellseek/` for evaluating segmentation and tracking models on open microscopy datasets.
+
+It currently supports:
+
+- Segmentation metrics: `Precision`, `Recall`, `F1` (instance-level IoU matching)
+- Tracking metrics: `TA`, `HOTA`, `DetA`, `AssA` (track association aware)
+
+---
+
+## 1) What this benchmark includes
+
+### Datasets (configured)
+
+- `cellpose` (segmentation)
+- `BBBC038` (segmentation; configure local folder path)
+- Every **`ctc_*`** entry (Cell Tracking Challenge layout): **tracking metrics only** — no segmentation pass on these datasets (standard TRA/SEG inputs).
+
+### Model adapters
+
+- `cellseek` (enabled): default **`tracking_propagation: cutie`** matches the **GUI** (CellSAM on the first frame, CUTIE for the rest). Set **`cutie_weights_path`** to your `cutie-base-mega.pth` (e.g. under `gui/weights/`). Use **`cellsam`** only for the legacy ablation (CellSAM on every frame).
+- `cellpose` (enabled)
+- `sam3` (enabled, native-or-fallback mode)
+- `microsam` (enabled, checkpoint-aware native-or-fallback mode)
+- `trackastra` (optional): transformer linking from a timelapse + per-frame instance masks; install **`requirements-extra-tracking.txt`** (`pip install trackastra`). Configure **`pretrained`** / **`track_mode`** / **`device`** in `configs/models.yaml`.
+- `ultrack` (optional): global linking from a label timelapse built via the same generic mask generator as fallbacks; install **`ultrack`** and a solver backend per [Ultrack docs](https://ultrack.readthedocs.io/). Tune **`linking_max_distance`**, **`solver_name`**, **`time_limit`**.
+- `celltractr` (optional): **does not call** the Cell-TRACTR Trackformer repo inside `csbench`. It **`delegate_tracker: trackastra`** by default so you keep the same `csbench` CLI while using Trackastra linking; run native Cell-TRACTR separately via `models/Cell-TRACTR/src/pipeline.py`.
+
+### Output artifacts
+
+Runs produce:
+
+- per-task JSON files in `outputs/<dataset>/<model>/...`
+- consolidated JSON report: `outputs/report.json`
+- flat CSV summary table: `outputs/summary.csv`
+
+---
+
+## 2) Repository structure
+
+```text
+cellseek_benchmark/
+  README.md
+  requirements.txt
+  pyproject.toml
+  configs/
+    datasets.yaml
+    models.yaml
+    metrics.yaml
+    experiments/
+      cellseek_ctc_bf_c2dl_hsc_tracking.yaml
+      …
+  cellseek_benchmark/
+    cli.py
+    test.py
+    registry.py
+    datasets/
+    models/
+    metrics/
+```
+
+---
+
+## 3) Environment setup (full instructions)
+
+You can use either Conda or Python venv.
+
+**Python version:** the benchmark package targets **CPython 3.10+** and is routinely usable on **3.13** (same `requires-python` as `pyproject.toml`). Heavy optional stacks (PyTorch, CellPose, SAM, Fiji) must still support your chosen interpreter—install those in the same environment you use for `csbench`.
+
+### Option A: Conda (recommended)
+
+```bash
+cd /home/fzhaoai/cellseek/cellseek_benchmark
+conda create -n cellseek-benchmark python=3.13 -y
+conda activate cellseek-benchmark
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install -r requirements-cellseek-tracking.txt
+# Optional Trackastra / Ultrack models: pip install -r requirements-extra-tracking.txt
+pip install -e .
+```
+
+The second requirements file installs **`cutie`** from the sibling checkout **`cellseek/cutie`** (`pip install -e ../cutie`). Place **`cutie-base-mega.pth`** under **`cellseek/cutie/weights/`** (run `python cutie/utils/download_models.py` from that repo, or reuse **`gui/weights/cutie-base-mega.pth`** via **`cutie_weights_path`** in `models.yaml`).
+
+Verify install:
+
+```bash
+python -c "import cellseek_benchmark; print('ok')"
+csbench --help
+```
+
+### Option B: Python venv
+
+```bash
+cd /home/fzhaoai/cellseek/cellseek_benchmark
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install -r requirements-cellseek-tracking.txt
+# Optional Trackastra / Ultrack models: pip install -r requirements-extra-tracking.txt
+pip install -e .
+```
+
+Verify:
+
+```bash
+python -c "import cellseek_benchmark; print('ok')"
+csbench --help
+```
+
+---
+
+## 4) Configure datasets and models
+
+Edit:
+
+- `configs/datasets.yaml` (catalog of dataset entries; you choose **one** key per run)
+- `configs/models.yaml` (catalog of model entries; you choose **one** key per run)
+- `configs/metrics.yaml`
+- **`configs/experiments/*.yaml`** — one file per run: `experiment_id`, `dataset`, `model`, `tasks`, optional `output_parent` / `run_name` (results go to `<output_parent>/<run_name>_<YYYYMMDD_HHMMSS>/`, default parent `experiments`), plus optional `datasets_config` / `models_config` / `metrics_config` (filenames relative to `configs/`)
+
+Minimum required updates for your machine:
+
+- set `BBBC038` root path if present
+- default `datasets.yaml` uses **`/project/cellseek/cell_tracking`** for **CTC** entries (challenge folders such as `BF-C2DL-HSC` directly under that root); adjust `cellpose` paths if needed
+- enable/disable models in `configs/models.yaml`
+- for `cellseek` native mode, CPSAM weights are resolved like the **GUI** (`gui/weights/cpsam`). The benchmark, if `cellseek.checkpoint_path` is **null**, searches **`CELLSEEK_CPSAM_PATH`**, an ancestor `gui/weights/cpsam`, or **`./weights/cpsam`**. For **tracking on CTC**, also place **CUTIE** weights (see `gui/main.py` / `cutie_weights_path`).
+- for `microsam` native mode, set a valid fine-tuned `checkpoint_path` (`checkpoint.pth`)
+- **CTC dataset keys** ignore `tasks: segmentation` / `both` for metrics purposes — only **tracking** runs; use `tasks: tracking` in that experiment YAML or the CLI.
+
+---
+
+## 5) Running the benchmark
+
+Each invocation evaluates **one** dataset and **one** model (see `cellseek_benchmark/test.py`). **Pick exactly one experiment YAML** under `configs/experiments/` (or add your own).
+
+### Run an experiment file
+
+Default preset is CellSeek × CTC (`ctc_bf_c2dl_hsc`) × tracking:
+
+```bash
+cd /home/fzhaoai/cellseek/cellseek_benchmark
+csbench --config-dir configs
+```
+
+Equivalent explicit path:
+
+```bash
+csbench --config-dir configs \
+  --benchmark-config experiments/cellseek_ctc_bf_c2dl_hsc_tracking.yaml
+```
+
+Copy `configs/experiments/cellseek_ctc_bf_c2dl_hsc_tracking.yaml` to a new name and edit `dataset`, `model`, `tasks`, and optionally `experiment_id` / `output_parent` for additional experiments (each run creates a new timestamped folder).
+
+### Override dataset, model, or tasks without editing YAML
+
+```bash
+csbench --config-dir configs \
+  --benchmark-config experiments/cellseek_ctc_bf_c2dl_hsc_tracking.yaml \
+  --dataset cellpose \
+  --model cellseek \
+  --tasks both
+```
+
+`--tasks` must be one of: `segmentation`, `tracking`, `both`.
+
+### Common focused runs
+
+Segmentation only (same experiment file, tasks overridden):
+
+```bash
+csbench --config-dir configs --tasks segmentation
+```
+
+Tracking only:
+
+```bash
+csbench --config-dir configs --tasks tracking
+```
+
+### Smaller on-disk subset for debugging
+
+Use `scripts/build_benchmark_subset.py` to mirror a tiny slice of each dataset under a folder (for example `benchmark_subset_10/`). Copy `configs/` (including `experiments/`) to a new directory, point `datasets.yaml` roots at that subset, then run `csbench --config-dir <that_directory> --benchmark-config experiments/<your_experiment>.yaml`.
+
+---
+
+## 6) Evaluation pipeline details
+
+### Segmentation pipeline
+
+For each image:
+
+1. collect GT and predicted instance IDs (exclude `0`)
+2. compute IoU matrix for all GT/pred instance pairs
+3. run Hungarian one-to-one assignment on `1 - IoU`
+4. keep matched pairs with `IoU >= threshold` (default `0.5`)
+5. compute:
+   - `TP`: matched pairs
+   - `FP`: unmatched predicted instances
+   - `FN`: unmatched GT instances
+   - `Precision = TP / (TP + FP)`
+   - `Recall = TP / (TP + FN)`
+   - `F1 = 2PR / (P + R)`
+
+Configured in `configs/metrics.yaml` under:
+
+- `segmentation.iou_thresholds`
+
+### Tracking pipeline
+
+For each sequence:
+
+1. perform frame-wise Hungarian matching using Euclidean distance between detections (`x,y`)
+2. valid matches require distance <= `match_radius_px`
+3. aggregate detection-level counts:
+   - `TP`, `FP`, `FN`
+   - `DetA = TP / (TP + FP + FN)`
+4. compute association consistency for each matched pair `(gt_track, pred_track)`:
+   - `assoc = m_gp / (m_g + m_p - m_gp)`
+   - where `m_gp` is matched co-occurrence count across frames
+5. aggregate:
+   - `AssA = mean(assoc over matched TPs)`
+   - `HOTA = sqrt(DetA * AssA)`
+   - `TA` is reported as alias of HOTA
+
+### Joint segmentation + tracking (datasets that support both tasks)
+
+On datasets that still run segmentation **and** tracking (not CTC), if `tasks` is `both`, the dataset adapter sets `joint_segmentation_with_tracking`, and the model defines **`predict_tracks_returning_masks`**, the benchmark may run **one inference pass per sequence** for both metrics. **CTC entries do not run segmentation** here — only tracking — so joint seg+track does not apply on CTC.
+
+Fallback behavior (to keep runs robust across all models/datasets):
+
+- If a model native backend is disabled or unavailable, adapters use a deterministic fallback:
+  - segmentation: Otsu threshold + connected components
+  - tracking: nearest-neighbor centroid linking
+- This guarantees that benchmark inference can run end-to-end on all configured models/datasets.
+- For research-grade comparisons, enable native modes and provide valid checkpoints/exports.
+
+Configured in `configs/metrics.yaml` under:
+
+- `tracking.match_radius_px`
+
+---
+
+## 7) Results and where to find them
+
+After a run:
+
+- global report: `outputs/report.json`
+- summary table: `outputs/summary.csv`
+- per dataset/model:
+  - segmentation: `outputs/<dataset>/<model>/segmentation/summary.json`
+  - tracking: `outputs/<dataset>/<model>/tracking/tracking.json`
+
+---
+
+## 8) Notes specific to your current datasets
+
+- `cellpose` dataset is directly usable for segmentation benchmarking.
+- **CTC** (`ctc_*` keys): evaluation is **tracking-only**. **`cellseek`** uses the GUI pipeline (**CUTIE** after frame 0) when `tracking_propagation: cutie`.
+- `BBBC038` adapter is ready; update glob patterns/path to your local BBBC038 structure.
+
+---
+
+## 9) Extending the benchmark
+
+### Add a new model
+
+Implement `ModelAdapter` in `cellseek_benchmark/models/base.py`:
+
+- `predict_mask(image) -> instance_mask`
+- `predict_tracks(frames) -> DataFrame(frame, track_id, x, y)`
+
+Register it in `cellseek_benchmark/registry.py`.
+
+### Add a new dataset
+
+Implement `DatasetAdapter` in `cellseek_benchmark/datasets/base.py`:
+
+- `iter_segmentation() -> SegSample`
+- `iter_tracking() -> TrackSequence`
+
+Register in `registry.py` and config in `configs/datasets.yaml`.
+

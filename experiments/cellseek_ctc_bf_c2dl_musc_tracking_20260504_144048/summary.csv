@@ -1,0 +1,2 @@
+dataset,model,init_error,seg_error,trk_error,n_seg_samples,precision,recall,f1,TA,HOTA,DetA,AssA,n_trk_sequences,n_trk_scored,n_trk_error
+ctc_bf_c2dl_musc,cellseek,,,,,,,,0.12517879431235587,0.12517879431235587,0.03177776048549011,0.5701679569919889,2,2,0

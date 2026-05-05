@@ -1,0 +1,59 @@
+models:
+  cellseek:
+    type: cellseek
+    enabled: true
+    use_gpu: true
+    checkpoint_path: /home/fzhaoai/cellseek/gui/weights/cpsam
+    tracking_propagation: cutie
+
+  cellpose:
+    type: cellpose
+    enabled: true
+    pretrained_model: cpsam
+
+  sam3:
+    type: sam3
+    enabled: true
+    prompt: cell
+    checkpoint_path: /home/fzhaoai/.cache/models--facebook--sam3/snapshots/2afe64078f4420bdfbc063162d1336003efadc81/sam3.pt
+    tracking_max_long_edge: 1024
+    tracking_offload_image_model: true
+
+  microsam:
+    type: microsam
+    enabled: true
+    checkpoint_path: /home/fzhaoai/cellseek/cellseek_benchmark/checkpoints/microsam_vit_b_lm.pt
+    pred_iou_thresh: 0.35
+    stability_score_thresh: 0.65
+    match_radius_px: 80
+    tracking_min_mask_area: 50
+    tracking_max_mask_area: null
+    tracking_max_instances_per_frame: 24
+
+  trackastra:
+    type: trackastra
+    enabled: true
+    pretrained: general_2d
+    track_mode: greedy
+    device: automatic
+    verbose: false
+    delta_t: 1
+
+  ultrack:
+    type: ultrack
+    enabled: true
+    labels_to_contours_sigma: 1.0
+    linking_max_distance: 15.0
+    max_neighbors: 5
+    solver_name: ""
+    time_limit: 300
+    window_size: 64
+
+  celltractr:
+    type: celltractr
+    enabled: true
+    delegate_tracker: trackastra
+    pretrained: general_2d
+    track_mode: greedy
+    device: automatic
+    verbose: false

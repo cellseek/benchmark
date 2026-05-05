@@ -1,0 +1,2 @@
+dataset,model,init_error,seg_error,trk_error,n_seg_samples,precision,recall,f1,TA,HOTA,DetA,AssA,n_trk_sequences,n_trk_scored,n_trk_error
+ctc_bf_c2dl_musc,trackastra,,,,,,,,0.018660374999508667,0.018660374999508667,0.01879073593749054,0.01907798379921068,2,2,0

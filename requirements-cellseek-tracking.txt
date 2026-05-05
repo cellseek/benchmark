@@ -1,0 +1,10 @@
+# CellSeek GUI-aligned tracking needs the CUTIE fork shipped next to this repo:
+#   cellseek/
+#     cutie/                  <-- pip install -e from here
+#     cellseek_benchmark/
+#
+# Run from cellseek_benchmark/:
+#   pip install -r requirements.txt
+#   pip install -r requirements-cellseek-tracking.txt
+
+-e ../cutie

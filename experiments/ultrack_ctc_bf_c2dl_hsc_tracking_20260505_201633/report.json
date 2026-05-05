@@ -1,0 +1,9 @@
+{
+  "ctc_bf_c2dl_musc": {
+    "ultrack": {
+      "tracking": {
+        "error": "tracking inference failed for sequence 'BF-C2DL-MuSC_01': buffer source array is read-only"
+      }
+    }
+  }
+}
