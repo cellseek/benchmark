@@ -19,7 +19,7 @@ It currently supports:
 
 ### Model adapters
 
-- `cellseek` (enabled): default **`tracking_propagation: cutie`** matches the **GUI** (CellSAM on the first frame, CUTIE for the rest). Set **`cutie_weights_path`** to your `cutie-base-mega.pth` (e.g. under `gui/weights/`). Use **`cellsam`** only for the legacy ablation (CellSAM on every frame).
+- `cellseek` (enabled): default **`tracking_propagation: cutie`** uses CellSAM on the first frame and **`cellsam.MaskTracker`** for propagation. Place weights under **`cellsam/weights/`** (`cpsam`, `cutie-base-mega.pth`) or set **`checkpoint_path`** / **`cutie_weights_path`**. Use **`cellsam`** only for the legacy ablation (CellSAM on every frame).
 - `cellpose` (enabled)
 - `sam3` (enabled, native-or-fallback mode)
 - `microsam` (enabled, checkpoint-aware native-or-fallback mode)
@@ -81,7 +81,7 @@ pip install -r requirements-cellseek-tracking.txt
 pip install -e .
 ```
 
-The second requirements file installs **`cutie`** from the sibling checkout **`cellseek/cutie`** (`pip install -e ../cutie`). Place **`cutie-base-mega.pth`** under **`cellseek/cutie/weights/`** (run `python cutie/utils/download_models.py` from that repo, or reuse **`gui/weights/cutie-base-mega.pth`** via **`cutie_weights_path`** in `models.yaml`).
+The second requirements file installs **`cellsam`** and the CUTIE backend (`pip install -e ../cellsam` and `pip install -e ../cutie`). Place **`cpsam`** and **`cutie-base-mega.pth`** under **`cellseek/cellsam/weights/`** (the GUI downloads them there on first launch), or set **`CELLSEEK_CPSAM_PATH`** / **`CELLSEEK_CUTIE_PATH`**.
 
 Verify install:
 
@@ -126,9 +126,9 @@ Minimum required updates for your machine:
 - set `BBBC038` root path if present
 - default `datasets.yaml` uses **`/project/cellseek/cell_tracking`** for **CTC** entries (challenge folders such as `BF-C2DL-HSC` directly under that root); adjust `cellpose` paths if needed
 - enable/disable models in `configs/models.yaml`
-- for `cellseek` native mode, CPSAM weights are resolved like the **GUI** (`gui/weights/cpsam`). The benchmark, if `cellseek.checkpoint_path` is **null**, searches **`CELLSEEK_CPSAM_PATH`**, an ancestor `gui/weights/cpsam`, or **`./weights/cpsam`**. For **tracking on CTC**, also place **CUTIE** weights (see `gui/main.py` / `cutie_weights_path`).
+- for `cellseek` native mode, CPSAM weights are resolved via **`cellsam.resolve_cpsam_path`**. If `cellseek.checkpoint_path` is **null**, searches **`CELLSEEK_CPSAM_PATH`**, **`cellsam/weights/cpsam`**, or **`./weights/cpsam`**. For **tracking on CTC**, also place propagation weights (`cutie-base-mega.pth`) beside CPSAM or set **`cutie_weights_path`** / **`CELLSEEK_CUTIE_PATH`**.
 - for `microsam` native mode, set a valid fine-tuned `checkpoint_path` (`checkpoint.pth`)
-- **CTC dataset keys** ignore `tasks: segmentation` / `both` for metrics purposes — only **tracking** runs; use `tasks: tracking` in that experiment YAML or the CLI.
+- **CTC segmentation** uses sparse **`SEG/man_seg`** GT (`ctc_bf_c2dl_hsc`, etc.). **CTC tracking** uses TRA centroids via `tasks: tracking`.
 
 ---
 
@@ -168,13 +168,23 @@ csbench --config-dir configs \
 
 ### Common focused runs
 
-Segmentation only (same experiment file, tasks overridden):
+CTC segmentation (SEG GT, Omnipose):
 
 ```bash
-csbench --config-dir configs --tasks segmentation
+python -m cellseek_benchmark.test --config-dir configs \
+  --benchmark-config experiments/omnipose_ctc_bf_c2dl_hsc_segmentation.yaml
 ```
 
-Tracking only:
+CTC segmentation (SEG GT, CellSAM):
+
+```bash
+python -m cellseek_benchmark.test --config-dir configs \
+  --benchmark-config experiments/cellsam_seg_ctc_bf_c2dl_hsc_segmentation.yaml
+```
+
+Slurm: `sbatch sbatch.sh` (Omnipose) or `sbatch sbatch_segmentation.sh` (CellSAM).
+
+Tracking only (CTC):
 
 ```bash
 csbench --config-dir configs --tasks tracking
@@ -208,26 +218,28 @@ Configured in `configs/metrics.yaml` under:
 
 - `segmentation.iou_thresholds`
 
-### Tracking pipeline
+### Tracking pipeline (CTC sub-sequences)
 
-For each sequence:
+CTC tracking uses **`man_track_filtered.json`**: each JSON entry is one benchmark sequence (frame range + `Valid_IDs`). Summary metrics use **macro mean per sub-sequence** (not frame-weighted).
 
-1. perform frame-wise Hungarian matching using Euclidean distance between detections (`x,y`)
-2. valid matches require distance <= `match_radius_px`
-3. aggregate detection-level counts:
-   - `TP`, `FP`, `FN`
-   - `DetA = TP / (TP + FP + FN)`
-4. compute association consistency for each matched pair `(gt_track, pred_track)`:
-   - `assoc = m_gp / (m_g + m_p - m_gp)`
-   - where `m_gp` is matched co-occurrence count across frames
-5. aggregate:
-   - `AssA = mean(assoc over matched TPs)`
-   - `HOTA = sqrt(DetA * AssA)`
-   - `TA` is reported as alias of HOTA
+For each sub-sequence:
+
+1. model produces point tracks `(frame, track_id, x, y)` (and optionally masks)
+2. optional: drop predicted tracks shorter than `tracking.pred_min_track_frames` (**same rule for all models**)
+3. frame-wise Hungarian matching (`match_radius_px` is **global**, do not tune per model)
+4. `DetA`, `AssA`, `HOTA`; optional **mask F1** on frames with sparse SEG GT
+5. `tracking.json` includes **`stratified`** buckets by segment length and `constant_cell_count`
+
+**Leaderboards:**
+
+- **End-to-end (main):** each model’s default pipeline (`cellseek` = CellSAM + CUTIE; `sam3` = video propagate; `microsam` = per-frame SAM + linking; `trackastra`/`ultrack` = Otsu fallback masks + linker unless configured otherwise).
+- **Linker sub-board (optional):** `trackastra_shared_cellseek` / `ultrack_shared_cellseek` use **CellSAM masks** then compare linking only.
+
+**cellseek tracking defaults:** `tracking_propagation: cutie`, seed search in the first *k* frames, fresh CUTIE state per sub-sequence, optional early stop on consecutive empty masks. No GT seeding; no per-model `match_radius_px` for HOTA.
 
 ### Joint segmentation + tracking (datasets that support both tasks)
 
-On datasets that still run segmentation **and** tracking (not CTC), if `tasks` is `both`, the dataset adapter sets `joint_segmentation_with_tracking`, and the model defines **`predict_tracks_returning_masks`**, the benchmark may run **one inference pass per sequence** for both metrics. **CTC entries do not run segmentation** here — only tracking — so joint seg+track does not apply on CTC.
+On datasets that still run segmentation **and** tracking (not CTC), if `tasks` is `both`, the dataset adapter sets `joint_segmentation_with_tracking`, and the model defines **`predict_tracks_returning_masks`**, the benchmark may run **one inference pass per sequence** for both metrics. **CTC** does not use joint mode (`joint_segmentation_with_tracking` is false); use separate experiment YAMLs for `tasks: segmentation` (SEG GT) vs `tasks: tracking` (TRA).
 
 Fallback behavior (to keep runs robust across all models/datasets):
 
@@ -237,9 +249,7 @@ Fallback behavior (to keep runs robust across all models/datasets):
 - This guarantees that benchmark inference can run end-to-end on all configured models/datasets.
 - For research-grade comparisons, enable native modes and provide valid checkpoints/exports.
 
-Configured in `configs/metrics.yaml` under:
-
-- `tracking.match_radius_px`
+Configured in `configs/metrics.yaml` under `tracking.*` (`match_radius_px`, `pred_min_track_frames`, `mask_metrics_on_tracking`, `oom_fallback_max_frames`).
 
 ---
 
@@ -258,7 +268,7 @@ After a run:
 ## 8) Notes specific to your current datasets
 
 - `cellpose` dataset is directly usable for segmentation benchmarking.
-- **CTC** (`ctc_*` keys): evaluation is **tracking-only**. **`cellseek`** uses the GUI pipeline (**CUTIE** after frame 0) when `tracking_propagation: cutie`.
+- **CTC** (`ctc_*` keys): **`tasks: tracking`** uses TRA sub-sequences from **`man_track_filtered.json`**; **`tasks: segmentation`** uses sparse **`SEG/man_seg`**. **`cellseek`** tracking: CellSAM seed + CUTIE (`tracking_propagation: cutie`). **`trackastra`/`ultrack`** default to Otsu **`fallback`** masks (weak on BF phase contrast); use **`trackastra_shared_cellseek`** for a fair linker comparison.
 - `BBBC038` adapter is ready; update glob patterns/path to your local BBBC038 structure.
 
 ---

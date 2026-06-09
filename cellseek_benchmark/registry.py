@@ -5,6 +5,7 @@ from .datasets import (
 )
 from .models.cellseek_adapter import CellSeekAdapter
 from .models.cellpose_adapter import CellposeAdapter as CellposeModelAdapter
+from .models.omnipose_adapter import OmniposeAdapter
 from .models.sam3_adapter import SAM3Adapter
 from .models.microsam_adapter import MicroSAMAdapter
 from .models.trackastra_adapter import TrackastraAdapter
@@ -22,6 +23,7 @@ DATASET_REGISTRY = {
 MODEL_REGISTRY = {
     "cellseek": CellSeekAdapter,
     "cellpose": CellposeModelAdapter,
+    "omnipose": OmniposeAdapter,
     "sam3": SAM3Adapter,
     "microsam": MicroSAMAdapter,
     "trackastra": TrackastraAdapter,

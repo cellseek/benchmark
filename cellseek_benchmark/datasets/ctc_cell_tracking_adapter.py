@@ -3,17 +3,19 @@ CTC-style cell tracking datasets (shared layout across challenges).
 
 Per sequence / split:
   - Raw frames: ``<split>/t<time>.tif`` (time is zero-padded; width varies by set).
-  - Segmentation GT: ``<split>_GT/SEG/man_seg<time>.tif`` (instance masks).
-  - Tracking GT: ``<split>_GT/TRA/man_track<time>.tif`` (per-frame label masks;
-    ``man_track.txt`` is metadata and is ignored here).
+  - Segmentation benchmark GT: ``<split>_GT/SEG/man_seg*.tif`` (sparse instance masks).
+  - Tracking GT: ``<split>_GT/TRA/man_track<time>.tif`` (per-frame label masks).
+  - Tracking **sequences** are defined by ``<split>_GT/TRA/man_track_filtered.json``
+    (``Sequences[]`` with ``Start_Frame``, ``End_Frame``, ``Valid_IDs``). Each entry
+    becomes one ``TrackSequence`` (not one sequence per entire split ``01``/``02``).
 
-``frame`` in emitted ``gt_tracks`` is the CTC time index (same subscript as
-``frames[frame]``), which requires raw ``t*.tif`` to cover every integer in
-``0 .. T-1`` with no gaps — standard for official CTC training sets.
+``gt_tracks.frame`` is **local** to the subsequence (0 .. len(frames)-1), aligned
+with ``frames[i]``. Raw ``t*.tif`` must still cover ``0 .. T-1`` without gaps.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -138,6 +140,56 @@ def _resolve_raw_for_seg_time(raw_dir: Path, time_digits: str) -> Path | None:
     return None
 
 
+def _load_tra_sequence_specs(tra_dir: Path, json_name: str) -> list[dict] | None:
+    """Load ``Sequences`` from ``man_track_filtered.json``, or None if missing."""
+    path = tra_dir / json_name
+    if not path.is_file():
+        return None
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    seqs = data.get("Sequences")
+    if not isinstance(seqs, list):
+        raise ValueError(f"{path}: expected top-level 'Sequences' list, got {type(seqs).__name__}")
+    return seqs
+
+
+def _gt_tracks_from_tra_window(
+    tra_mask_by_t: dict[int, np.ndarray],
+    t_start: int,
+    t_end: int,
+    valid_ids: set[int] | None,
+) -> pd.DataFrame:
+    """
+  Build point tracks for ``t_start .. t_end`` inclusive.
+
+  ``frame`` in the output is local (0 at ``t_start``). Only track IDs in
+  ``valid_ids`` are kept when that set is provided.
+    """
+    gt_rows: list[dict] = []
+    for local_f, global_t in enumerate(range(t_start, t_end + 1)):
+        lab = tra_mask_by_t.get(global_t)
+        if lab is None:
+            continue
+        for tid in np.unique(lab):
+            tid = int(tid)
+            if tid <= 0:
+                continue
+            if valid_ids is not None and tid not in valid_ids:
+                continue
+            ys, xs = np.nonzero(lab == tid)
+            if len(xs) == 0:
+                continue
+            gt_rows.append(
+                {
+                    "frame": local_f,
+                    "track_id": tid,
+                    "x": float(xs.mean()),
+                    "y": float(ys.mean()),
+                }
+            )
+    return pd.DataFrame(gt_rows, columns=["frame", "track_id", "x", "y"])
+
+
 class CTCCellTrackingAdapter(DatasetAdapter):
     """
     Adapter for CTC-style cell tracking datasets under one root.
@@ -146,6 +198,7 @@ class CTCCellTrackingAdapter(DatasetAdapter):
       <dataset>/<split>/t*.tif
       <dataset>/<split>_GT/SEG/man_seg*.tif
       <dataset>/<split>_GT/TRA/man_track*.tif
+      <dataset>/<split>_GT/TRA/man_track_filtered.json  (tracking sub-sequences)
     """
 
     joint_segmentation_with_tracking = False
@@ -166,6 +219,9 @@ class CTCCellTrackingAdapter(DatasetAdapter):
         self.max_frames_per_sequence = int(mfs) if mfs is not None else None
         mss = cfg.get("max_segmentation_samples")
         self.max_segmentation_samples = int(mss) if mss is not None else None
+        self.tracking_sequence_json = str(
+            cfg.get("tracking_sequence_json", "man_track_filtered.json")
+        )
 
     def _iter_dataset_split(self):
         for ds in self.dataset_names:
@@ -204,6 +260,90 @@ class CTCCellTrackingAdapter(DatasetAdapter):
                 ):
                     return
 
+    def _iter_tracking_specs(self, tra_dir: Path) -> list[dict]:
+        specs = _load_tra_sequence_specs(tra_dir, self.tracking_sequence_json)
+        if specs is not None:
+            return specs
+        print(
+            f"cellseek-benchmark: {tra_dir / self.tracking_sequence_json} not found; "
+            f"falling back to one sequence per split (full frame range).",
+            flush=True,
+        )
+        return []
+
+    def _yield_track_sequence(
+        self,
+        *,
+        ds: str,
+        split: str,
+        seq_spec: dict,
+        seq_index: int,
+        frame_paths: list[Path],
+        tra_mask_by_t: dict[int, np.ndarray],
+        seg_mask_by_t: dict[int, np.ndarray],
+        t_start: int,
+        t_end: int,
+        seq_id: str | None = None,
+    ):
+        max_t = len(frame_paths) - 1
+        if t_start > max_t:
+            return
+        t_end = min(int(t_end), max_t)
+        if t_end < t_start:
+            return
+
+        sub_paths = frame_paths[t_start : t_end + 1]
+        if self.max_frames_per_sequence is not None:
+            sub_paths = sub_paths[: self.max_frames_per_sequence]
+        if not sub_paths:
+            return
+        t_end_eff = t_start + len(sub_paths) - 1
+
+        valid_raw = seq_spec.get("Valid_IDs")
+        valid_ids = None if valid_raw is None else {int(x) for x in valid_raw}
+
+        frames = [_read_ctc_image(fp) for fp in sub_paths]
+        gt_tracks = _gt_tracks_from_tra_window(
+            tra_mask_by_t, t_start, t_end_eff, valid_ids
+        )
+
+        gt_masks: list[np.ndarray | None] | None = None
+        frame_seg_sample_ids: list[str] = []
+        if seg_mask_by_t:
+            gt_masks = []
+            for fp in sub_paths:
+                idx_str = _raw_frame_idx_str(fp)
+                global_t = int(idx_str) if idx_str is not None else -1
+                gt_masks.append(seg_mask_by_t.get(global_t))
+                frame_seg_sample_ids.append(
+                    f"{ds}/{split}/{idx_str}" if idx_str is not None else f"{ds}/{split}/?"
+                )
+
+        if seq_id is None:
+            seq_id = f"{ds}_{split}_seq{seq_index:03d}_f{t_start:04d}-{t_end_eff:04d}"
+        cc_raw = seq_spec.get("Constant_Cell_Count")
+        meta = {
+            "dataset": ds,
+            "split": split,
+            "sequence_index": seq_index,
+            "start_frame": t_start,
+            "end_frame": t_end_eff,
+            "n_frames": len(frames),
+            "constant_cell_count": int(cc_raw) if cc_raw is not None else None,
+            "valid_ids": sorted(valid_ids) if valid_ids is not None else None,
+            "tracking_json": self.tracking_sequence_json,
+        }
+        if frame_seg_sample_ids:
+            meta["frame_seg_sample_ids"] = frame_seg_sample_ids
+
+        yield TrackSequence(
+            seq_id=seq_id,
+            frames=frames,
+            gt_masks=gt_masks,
+            gt_tracks=gt_tracks,
+            meta=meta,
+        )
+
     def iter_tracking(self):
         emitted = 0
         for ds, split, raw_dir, gt_dir in self._iter_dataset_split():
@@ -213,72 +353,65 @@ class CTCCellTrackingAdapter(DatasetAdapter):
             frame_paths = _sorted_raw_frame_paths(raw_dir)
             if frame_paths is None:
                 continue
-            tra_files = _sorted_tra_mask_paths(tra_dir)
-            if self.max_frames_per_sequence is not None:
-                frame_paths = frame_paths[: self.max_frames_per_sequence]
-            if not frame_paths or not tra_files:
+            if not frame_paths:
                 continue
 
-            frames = [_read_ctc_image(fp) for fp in frame_paths]
-            max_t = len(frames) - 1
+            tra_mask_by_t: dict[int, np.ndarray] = {}
+            for tra_fp in _sorted_tra_mask_paths(tra_dir):
+                ti = _tra_time_int(tra_fp)
+                if ti is not None:
+                    tra_mask_by_t[ti] = tifffile.imread(str(tra_fp)).astype(np.int32)
 
             seg_dir = gt_dir / "SEG"
             seg_mask_by_t: dict[int, np.ndarray] = {}
             if seg_dir.is_dir():
                 for seg_fp in _sorted_seg_paths(seg_dir):
                     ti = _seg_time_int(seg_fp)
-                    if ti is None:
-                        continue
-                    seg_mask_by_t[ti] = tifffile.imread(str(seg_fp)).astype(np.int32)
+                    if ti is not None:
+                        seg_mask_by_t[ti] = tifffile.imread(str(seg_fp)).astype(np.int32)
 
-            gt_masks: list[np.ndarray | None] | None
-            frame_seg_sample_ids: list[str]
-            if seg_mask_by_t:
-                gt_masks = [seg_mask_by_t.get(i) for i in range(len(frames))]
-                frame_seg_sample_ids = []
-                for fp in frame_paths:
-                    idx_str = _raw_frame_idx_str(fp)
-                    if idx_str is None:
-                        idx_str = str(len(frame_seg_sample_ids))
-                    frame_seg_sample_ids.append(f"{ds}/{split}/{idx_str}")
-            else:
-                gt_masks = None
-                frame_seg_sample_ids = []
-
-            gt_rows = []
-            for tra_fp in tra_files:
-                idx = _tra_time_int(tra_fp)
-                if idx is None or idx > max_t:
-                    continue
-                lab = tifffile.imread(str(tra_fp)).astype(np.int32)
-                for tid in np.unique(lab):
-                    if tid <= 0:
-                        continue
-                    ys, xs = np.nonzero(lab == tid)
-                    if len(xs) == 0:
-                        continue
-                    gt_rows.append(
-                        {
-                            "frame": idx,
-                            "track_id": int(tid),
-                            "x": float(xs.mean()),
-                            "y": float(ys.mean()),
-                        }
+            specs = self._iter_tracking_specs(tra_dir)
+            if specs:
+                print(
+                    f"cellseek-benchmark: {ds}/{split} — {len(specs)} tracking sub-sequences "
+                    f"from {self.tracking_sequence_json}",
+                    flush=True,
+                )
+                for seq_index, spec in enumerate(specs):
+                    yield from self._yield_track_sequence(
+                        ds=ds,
+                        split=split,
+                        seq_spec=spec,
+                        seq_index=seq_index,
+                        frame_paths=frame_paths,
+                        tra_mask_by_t=tra_mask_by_t,
+                        seg_mask_by_t=seg_mask_by_t,
+                        t_start=int(spec["Start_Frame"]),
+                        t_end=int(spec["End_Frame"]),
                     )
-            gt_tracks = pd.DataFrame(gt_rows, columns=["frame", "track_id", "x", "y"])
-            meta = {"dataset": ds, "split": split}
-            if frame_seg_sample_ids:
-                meta["frame_seg_sample_ids"] = frame_seg_sample_ids
-            yield TrackSequence(
-                seq_id=f"{ds}_{split}",
-                frames=frames,
-                gt_masks=gt_masks,
-                gt_tracks=gt_tracks,
-                meta=meta,
-            )
-            emitted += 1
-            if (
-                self.max_tracking_sequences is not None
-                and emitted >= self.max_tracking_sequences
-            ):
-                return
+                    emitted += 1
+                    if (
+                        self.max_tracking_sequences is not None
+                        and emitted >= self.max_tracking_sequences
+                    ):
+                        return
+            else:
+                max_t = len(frame_paths) - 1
+                yield from self._yield_track_sequence(
+                    ds=ds,
+                    split=split,
+                    seq_spec={"Start_Frame": 0, "End_Frame": max_t, "Valid_IDs": None},
+                    seq_index=0,
+                    frame_paths=frame_paths,
+                    tra_mask_by_t=tra_mask_by_t,
+                    seg_mask_by_t=seg_mask_by_t,
+                    t_start=0,
+                    t_end=max_t,
+                    seq_id=f"{ds}_{split}",
+                )
+                emitted += 1
+                if (
+                    self.max_tracking_sequences is not None
+                    and emitted >= self.max_tracking_sequences
+                ):
+                    return

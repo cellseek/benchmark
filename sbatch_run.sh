@@ -58,10 +58,9 @@ run_exp() {
 # ctc_bf_c2dl_hsc: Trackastra, Ultrack, Cell-TRACTR
 run_exp "experiments/trackastra_ctc_bf_c2dl_hsc_tracking.yaml" "${TRACKASTRA_ENV}"
 run_exp "experiments/ultrack_ctc_bf_c2dl_hsc_tracking.yaml" "${ULTRACK_ENV}"
-run_exp "experiments/celltractr_ctc_bf_c2dl_hsc_tracking.yaml" "${CELLTRACTR_ENV}"
+
 
 # ctc_bf_c2dl_musc: Ultrack, Cell-TRACTR
 run_exp "experiments/ultrack_ctc_bf_c2dl_musc_tracking.yaml" "${ULTRACK_ENV}"
-run_exp "experiments/celltractr_ctc_bf_c2dl_musc_tracking.yaml" "${CELLTRACTR_ENV}"
 
 echo "[$(date)] all requested experiments finished."

@@ -6,7 +6,7 @@ experiment_id: cellseek_ctc_bf_c2dl_hsc_tracking
 # Run outputs: experiments/<experiment_id>_<YYYYMMDD_HHMMSS>/ (override parent below).
 output_parent: experiments
 
-dataset: ctc_bf_c2dl_musc
+dataset: ctc_bf_c2dl_hsc
 model: cellseek
 tasks: tracking
 

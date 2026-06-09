@@ -1,10 +1,12 @@
-# CellSeek GUI-aligned tracking needs the CUTIE fork shipped next to this repo:
+# CellSeek tracking: cellsam (segmentation + propagation API) and CUTIE backend.
 #   cellseek/
-#     cutie/                  <-- pip install -e from here
+#     cellsam/                <-- pip install -e from here
+#     cutie/                  <-- pip install -e from here (MaskTracker backend)
 #     cellseek_benchmark/
 #
 # Run from cellseek_benchmark/:
 #   pip install -r requirements.txt
 #   pip install -r requirements-cellseek-tracking.txt
 
+-e ../cellsam
 -e ../cutie

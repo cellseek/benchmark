@@ -1,7 +1,0 @@
-{
-  "mode": "gt_seed_frame0",
-  "dataset": "ctc_bf_c2dl_hsc",
-  "model": "cellseek",
-  "benchmark_config": "/home/fzhaoai/cellseek/cellseek_benchmark/configs/experiments/cellseek_ctc_bf_c2dl_hsc_tracking.yaml",
-  "match_radius_px": 20.0
-}

@@ -1,0 +1,17 @@
+# Omnipose segmentation on CTC BF-C2DL-MuSC — GT from SEG/man_seg only (sparse).
+# Slurm: sbatch sbatch.sh
+# CLI:
+#   python -m cellseek_benchmark.test --config-dir configs \
+#     --benchmark-config experiments/omnipose_ctc_bf_c2dl_musc_segmentation.yaml
+
+experiment_id: omnipose_ctc_bf_c2dl_musc_segmentation
+
+output_parent: experiments
+
+dataset: ctc_bf_c2dl_musc
+model: omnipose
+tasks: segmentation
+
+datasets_config: datasets.yaml
+models_config: models.yaml
+metrics_config: metrics.yaml

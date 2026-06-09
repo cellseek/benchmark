@@ -1,4 +1,4 @@
-# Segmentation: cellpose, BBBC038. CTC tracking entries use roots under /project/cellseek/cell_tracking (adjust as needed).
+# Segmentation: cellpose, BBBC038. CTC segmentation GT: ``<split>_GT/SEG/man_seg*.tif`` (sparse).
 
 datasets:
   cellpose:
@@ -14,17 +14,20 @@ datasets:
     image_glob: "**/*img*.tif"
     mask_glob: "**/*mask*.tif"
 
+  # Tracking: sub-sequences from <split>_GT/TRA/man_track_filtered.json (Sequences[]).
   ctc_bf_c2dl_hsc:
     type: ctc_cell_tracking
     root: /project/cellseek/cell_tracking
     datasets: [BF-C2DL-HSC]
     splits: [01, 02]
+    tracking_sequence_json: man_track_filtered.json
 
   ctc_bf_c2dl_musc:
     type: ctc_cell_tracking
     root: /project/cellseek/cell_tracking
     datasets: [BF-C2DL-MuSC]
     splits: [01, 02]
+    tracking_sequence_json: man_track_filtered.json
 
   ctc_dic_c2dh_hela:
     type: ctc_cell_tracking

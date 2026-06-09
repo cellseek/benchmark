@@ -75,7 +75,7 @@ def _run_cellseek_gt_seed_sequence(model_adapter, seq):
     # Match CellSeek adapter's propagation choice.
     if getattr(model_adapter, "_tracking_propagation", "cellsam") == "cutie":
         logging.getLogger("cutie.inference.inference_core").setLevel(logging.ERROR)
-        tracker = model_adapter._get_cutie_tracker()
+        tracker = model_adapter._new_mask_tracker()
         prev_rgb = model_adapter._to_cutie_rgb_uint8(frames[seed_idx])
         prev_lab = seed_mask.astype(np.int32, copy=False)
         for t in range(seed_idx + 1, len(frames)):

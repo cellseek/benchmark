@@ -24,6 +24,12 @@ from .metrics.segmentation import prf1_iou
 from .metrics.tracking import eval_tracking_hota
 from .registry import DATASET_REGISTRY, MODEL_REGISTRY
 from .schemas import TrackSequence
+from .tracking_eval import (
+    build_tracking_summary,
+    infer_tracks_for_sequence,
+    score_sequence,
+    tracking_options,
+)
 
 
 def _normalize_tasks_value(raw) -> list[str]:
@@ -138,24 +144,41 @@ def _select_tasks_for_combo(
         return tasks, None
 
     if dataset_type == "ctc_cell_tracking":
-        tasks = [t for t in requested if t == "tracking"]
+        seg_only = {"cellpose", "omnipose", "cellsam_seg"}
+        if model.lower() in seg_only:
+            tasks = [t for t in requested if t == "segmentation"]
+            if not tasks:
+                return (
+                    [],
+                    f"Model {model_name!r} on CTC supports only segmentation here; use tasks: segmentation.",
+                )
+            if "tracking" in requested:
+                print(
+                    "cellseek-benchmark: CTC + segmentation-only model — ignoring tracking.",
+                    flush=True,
+                )
+            return tasks, None
+        # Other models: CTC supports tracking and/or segmentation. ``iter_segmentation``
+        # ``iter_segmentation`` yields sparse SEG/man_seg frames only.
+        tasks = [t for t in requested if t in ("segmentation", "tracking")]
         if not tasks:
             return (
                 [],
-                "CTC datasets only support tracking; use tasks: tracking.",
-            )
-        if model == "cellpose":
-            return [], "Cellpose tracking is not implemented for CTC datasets."
-        if "segmentation" in requested:
-            print(
-                "cellseek-benchmark: tracking-only dataset — ignoring segmentation.",
-                flush=True,
+                "CTC: use tasks segmentation, tracking, or both.",
             )
         return tasks, None
 
     if model in {"cellseek", "sam3", "microsam", "trackastra", "ultrack", "celltractr"}:
         tasks = [t for t in requested if t in {"segmentation", "tracking"}]
         return (tasks, None) if tasks else ([], "No runnable tasks requested.")
+
+    if model == "omnipose":
+        tasks = [t for t in requested if t == "segmentation"]
+        return (tasks, None) if tasks else ([], "Omnipose is segmentation-only here.")
+
+    if model == "cellsam_seg":
+        tasks = [t for t in requested if t == "segmentation"]
+        return (tasks, None) if tasks else ([], "cellsam_seg is segmentation-only here.")
 
     if model == "cellpose":
         tasks = [t for t in requested if t == "segmentation"]
@@ -220,8 +243,16 @@ def _iter_tracking_sequences(dataset_adapter):
             yield seq
 
 
-def run_tracking_pass(dataset_adapter, model_adapter, out_dir: Path, match_radius_px: float):
+def run_tracking_pass(
+    dataset_adapter,
+    model_adapter,
+    out_dir: Path,
+    *,
+    metrics_cfg: dict,
+    iou_threshold: float,
+):
     ensure_dir(out_dir)
+    opts = tracking_options(metrics_cfg)
     per_seq = []
 
     for seq in tqdm(
@@ -230,67 +261,53 @@ def run_tracking_pass(dataset_adapter, model_adapter, out_dir: Path, match_radiu
         unit="seq",
         dynamic_ncols=True,
     ):
-        seq_for_infer = seq
         try:
-            if hasattr(model_adapter, "predict_tracks_sequence"):
-                pred_tracks = model_adapter.predict_tracks_sequence(seq_for_infer)
-            else:
-                pred_tracks = model_adapter.predict_tracks(seq_for_infer.frames)
-        except RuntimeError as e:
-            msg = str(e).lower()
-            is_oom = "out of memory" in msg and "cuda" in msg
-            if is_oom and len(seq.frames) > 300:
-                try:
-                    import torch
-
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                except Exception:
-                    pass
-                max_frames = 300
-                gt = seq.gt_tracks
-                gt_small = gt[gt["frame"] < max_frames].copy() if gt is not None else None
-                gm_small = (
-                    list(seq.gt_masks[:max_frames]) if seq.gt_masks is not None else None
+            pred_tracks, pred_masks, seq_infer = infer_tracks_for_sequence(
+                model_adapter,
+                seq,
+                oom_fallback_max_frames=opts["oom_fallback_max_frames"],
+            )
+            if not isinstance(pred_tracks, pd.DataFrame):
+                pred_tracks = pd.DataFrame(pred_tracks)
+            per_seq.append(
+                score_sequence(
+                    seq,
+                    seq_infer,
+                    pred_tracks,
+                    pred_masks,
+                    match_radius_px=opts["match_radius_px"],
+                    pred_min_track_frames=opts["pred_min_track_frames"],
+                    mask_metrics_on_tracking=opts["mask_metrics_on_tracking"],
+                    iou_threshold=iou_threshold,
+                    model_adapter=model_adapter,
                 )
-                seq_for_infer = TrackSequence(
-                    seq_id=seq.seq_id,
-                    frames=seq.frames[:max_frames],
-                    gt_masks=gm_small,
-                    gt_tracks=gt_small,
-                    meta={**(seq.meta or {}), "oom_fallback_max_frames": max_frames},
-                )
-                if hasattr(model_adapter, "predict_tracks_sequence"):
-                    pred_tracks = model_adapter.predict_tracks_sequence(seq_for_infer)
-                else:
-                    pred_tracks = model_adapter.predict_tracks(seq_for_infer.frames)
-            else:
-                raise
+            )
         except NotImplementedError:
             raise
         except Exception as e:
-            raise RuntimeError(
-                f"tracking inference failed for sequence {seq.seq_id!r}: {e}"
-            ) from e
-        if not isinstance(pred_tracks, pd.DataFrame):
-            pred_tracks = pd.DataFrame(pred_tracks)
-        scores = eval_tracking_hota(
-            seq_for_infer.gt_tracks, pred_tracks, match_radius_px=match_radius_px
-        )
-        per_seq.append({"seq_id": seq.seq_id, **scores})
+            meta = seq.meta or {}
+            per_seq.append(
+                {
+                    "seq_id": seq.seq_id,
+                    "n_frames": len(seq.frames),
+                    "constant_cell_count": meta.get("constant_cell_count"),
+                    "error": str(e),
+                }
+            )
+            print(
+                f"cellseek-benchmark: sequence {seq.seq_id!r} failed: {e}",
+                flush=True,
+            )
+        finally:
+            try:
+                import torch
 
-    valid_rows = [r for r in per_seq if "HOTA" in r and "DetA" in r and "AssA" in r and "TA" in r]
-    error_rows = [r for r in per_seq if "error" in r]
-    if valid_rows:
-        summary = {}
-        for k in ("HOTA", "DetA", "AssA", "TA"):
-            vals = [r[k] for r in valid_rows if r[k] == r[k]]
-            summary[k] = float(sum(vals) / len(vals)) if vals else None
-    else:
-        summary = {"HOTA": None, "DetA": None, "AssA": None, "TA": None}
-    summary["n_sequences_total"] = len(per_seq)
-    summary["n_sequences_scored"] = len(valid_rows)
-    summary["n_sequences_error"] = len(error_rows)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+
+    summary = build_tracking_summary(per_seq, buckets=opts["frame_length_buckets"])
     dump_json({"summary": summary, "per_sequence": per_seq}, out_dir / "tracking.json")
     return summary
 
@@ -301,52 +318,16 @@ def _sequence_has_seg_gt(seq: TrackSequence) -> bool:
     return any(g is not None for g in seq.gt_masks)
 
 
-def _infer_tracks_with_masks(model_adapter, seq: TrackSequence):
-    seq_for_infer = seq
-    try:
-        df, masks = model_adapter.predict_tracks_returning_masks(seq_for_infer.frames)
-        return df, masks, seq_for_infer
-    except RuntimeError as e:
-        msg = str(e).lower()
-        is_oom = "out of memory" in msg and "cuda" in msg
-        if not is_oom or len(seq.frames) <= 300:
-            raise
-        try:
-            import torch
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
-        max_frames = 300
-        gt = seq.gt_tracks
-        gt_small = gt[gt["frame"] < max_frames].copy() if gt is not None else None
-        gm = seq.gt_masks
-        gm_small = list(gm[:max_frames]) if gm is not None else None
-        meta = dict(seq.meta or {})
-        ids = meta.get("frame_seg_sample_ids")
-        if isinstance(ids, list):
-            meta["frame_seg_sample_ids"] = ids[:max_frames]
-        meta["oom_fallback_max_frames"] = max_frames
-        seq_for_infer = TrackSequence(
-            seq_id=seq.seq_id,
-            frames=seq.frames[:max_frames],
-            gt_masks=gm_small,
-            gt_tracks=gt_small,
-            meta=meta,
-        )
-        df, masks = model_adapter.predict_tracks_returning_masks(seq_for_infer.frames)
-        return df, masks, seq_for_infer
-
-
 def run_joint_pass(
     dataset_adapter,
     model_adapter,
     seg_out_dir: Path,
     trk_out_dir: Path,
     iou_threshold: float,
-    match_radius_px: float,
+    metrics_cfg: dict,
 ):
+    opts = tracking_options(metrics_cfg)
+    match_radius_px = opts["match_radius_px"]
     ensure_dir(seg_out_dir)
     ensure_dir(trk_out_dir)
     per_sample = []
@@ -361,7 +342,11 @@ def run_joint_pass(
         dynamic_ncols=True,
     ):
         try:
-            pred_tracks, pred_masks, seq_infer = _infer_tracks_with_masks(model_adapter, seq)
+            pred_tracks, pred_masks, seq_infer = infer_tracks_for_sequence(
+                model_adapter,
+                seq,
+                oom_fallback_max_frames=opts["oom_fallback_max_frames"],
+            )
         except NotImplementedError:
             raise
         except Exception as e:
@@ -369,10 +354,19 @@ def run_joint_pass(
 
         if not isinstance(pred_tracks, pd.DataFrame):
             pred_tracks = pd.DataFrame(pred_tracks)
-        scores = eval_tracking_hota(
-            seq_infer.gt_tracks, pred_tracks, match_radius_px=match_radius_px
+        per_seq_trk.append(
+            score_sequence(
+                seq,
+                seq_infer,
+                pred_tracks,
+                pred_masks,
+                match_radius_px=match_radius_px,
+                pred_min_track_frames=opts["pred_min_track_frames"],
+                mask_metrics_on_tracking=opts["mask_metrics_on_tracking"],
+                iou_threshold=iou_threshold,
+                model_adapter=model_adapter,
+            )
         )
-        per_seq_trk.append({"seq_id": seq.seq_id, **scores})
 
         if (
             pred_masks
@@ -409,20 +403,9 @@ def run_joint_pass(
     dump_json(seg_summary, seg_out_dir / "summary.json")
     dump_json(per_sample, seg_out_dir / "per_sample.json")
 
-    valid_rows = [
-        r for r in per_seq_trk if "HOTA" in r and "DetA" in r and "AssA" in r and "TA" in r
-    ]
-    error_rows = [r for r in per_seq_trk if "error" in r]
-    if valid_rows:
-        trk_summary: dict = {}
-        for k in ("HOTA", "DetA", "AssA", "TA"):
-            vals = [r[k] for r in valid_rows if r[k] == r[k]]
-            trk_summary[k] = float(sum(vals) / len(vals)) if vals else None
-    else:
-        trk_summary = {"HOTA": None, "DetA": None, "AssA": None, "TA": None}
-    trk_summary["n_sequences_total"] = len(per_seq_trk)
-    trk_summary["n_sequences_scored"] = len(valid_rows)
-    trk_summary["n_sequences_error"] = len(error_rows)
+    trk_summary = build_tracking_summary(
+        per_seq_trk, buckets=opts["frame_length_buckets"]
+    )
     trk_summary["joint_with_segmentation_inference"] = True
     dump_json({"summary": trk_summary, "per_sequence": per_seq_trk}, trk_out_dir / "tracking.json")
     return seg_summary, trk_summary
@@ -475,6 +458,7 @@ def _write_summary_csv(report: dict, out_csv: Path):
         "HOTA",
         "DetA",
         "AssA",
+        "mask_f1_macro_mean",
         "n_trk_sequences",
         "n_trk_scored",
         "n_trk_error",
@@ -579,6 +563,7 @@ def _write_summary_csv(report: dict, out_csv: Path):
                     "HOTA": trk.get("HOTA"),
                     "DetA": trk.get("DetA"),
                     "AssA": trk.get("AssA"),
+                    "mask_f1_macro_mean": trk.get("mask_f1_macro_mean"),
                     "n_trk_sequences": trk.get("n_sequences_total"),
                     "n_trk_scored": trk.get("n_sequences_scored"),
                     "n_trk_error": trk.get("n_sequences_error"),
@@ -704,8 +689,6 @@ def run_benchmark(
     )
     result: dict = {}
     iou_thr = metrics_cfg["segmentation"]["iou_thresholds"][0]
-    match_radius_px = metrics_cfg["tracking"].get("match_radius_px", 20.0)
-
     ran_joint = False
     if (
         "segmentation" in combo_tasks
@@ -721,7 +704,7 @@ def run_benchmark(
                 out_dir / "segmentation",
                 out_dir / "tracking",
                 iou_thr,
-                match_radius_px,
+                metrics_cfg,
             )
             result["segmentation"] = seg_summary
             result["tracking"] = trk_summary
@@ -750,7 +733,8 @@ def run_benchmark(
                     dataset_adapter,
                     model_adapter,
                     out_dir / "tracking",
-                    match_radius_px=match_radius_px,
+                    metrics_cfg=metrics_cfg,
+                    iou_threshold=iou_thr,
                 )
             except NotImplementedError as e:
                 result["tracking"] = {"skipped": str(e)}

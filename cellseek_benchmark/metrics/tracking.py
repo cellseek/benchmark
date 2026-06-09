@@ -40,10 +40,33 @@ def _frame_match(gt_f: pd.DataFrame, pr_f: pd.DataFrame, match_radius_px: float)
     return matched
 
 
+def filter_ephemeral_pred_tracks(
+    pred_tracks: pd.DataFrame | None,
+    min_frames: int,
+) -> pd.DataFrame:
+    """
+    Drop predicted tracks that appear in fewer than ``min_frames`` frames.
+
+    Applied uniformly to all models when ``metrics.tracking.pred_min_track_frames`` > 1.
+    """
+    if pred_tracks is None or len(pred_tracks) == 0 or min_frames <= 1:
+        if pred_tracks is None:
+            return pd.DataFrame(columns=["frame", "track_id", "x", "y"])
+        return pred_tracks.copy()
+    counts = pred_tracks.groupby("track_id")["frame"].nunique()
+    keep = set(int(tid) for tid, c in counts.items() if int(c) >= int(min_frames))
+    if not keep:
+        return pred_tracks.iloc[0:0].copy()
+    out = pred_tracks[pred_tracks["track_id"].isin(keep)].copy()
+    return out
+
+
 def eval_tracking_hota(
     gt_tracks: pd.DataFrame,
     pred_tracks: pd.DataFrame,
     match_radius_px: float = 20.0,
+    *,
+    pred_min_track_frames: int = 1,
 ) -> dict:
     """
     Compute DetA / AssA / HOTA from point tracks.
@@ -63,6 +86,7 @@ def eval_tracking_hota(
 
     if pred_tracks is None:
         pred_tracks = pd.DataFrame(columns=["frame", "track_id", "x", "y"])
+    pred_tracks = filter_ephemeral_pred_tracks(pred_tracks, int(pred_min_track_frames))
 
     _validate_columns(gt_tracks, "gt_tracks")
     _validate_columns(pred_tracks, "pred_tracks")

@@ -32,3 +32,7 @@ include = ["cellseek_benchmark*"]
 
 [project.scripts]
 csbench = "cellseek_benchmark.test:main"
+
+[project.optional-dependencies]
+omnipose = ["omnipose"]
+cellseek-tracking = ["cellsam"]

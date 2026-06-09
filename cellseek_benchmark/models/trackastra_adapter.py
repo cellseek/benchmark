@@ -7,7 +7,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from .base import ModelAdapter
-from .fallbacks import fallback_instance_mask
+from .shared_segmentation import resolve_shared_segmentation_mask_fn
 
 
 def _to_gray_float(frame: np.ndarray) -> np.ndarray:
@@ -81,9 +81,10 @@ class TrackastraAdapter(ModelAdapter):
             flush=True,
         )
         self._model = Trackastra.from_pretrained(name, device=device, **bs_kw)
+        self._mask_fn = resolve_shared_segmentation_mask_fn(cfg)
 
     def predict_mask(self, image: np.ndarray) -> np.ndarray:
-        return fallback_instance_mask(image)
+        return self._mask_fn(image)
 
     def _volume_from_frames(self, frames: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
         if not frames:
@@ -99,6 +100,15 @@ class TrackastraAdapter(ModelAdapter):
     def _track_impl(
         self, frames: list[np.ndarray], *, return_masks: bool
     ) -> tuple[pd.DataFrame, list[np.ndarray] | None]:
+        if len(frames) < 2:
+            masks = np.stack(
+                [self.predict_mask(f).astype(np.int32, copy=True) for f in frames], axis=0
+            )
+            df = _masks_to_track_df(masks)
+            if return_masks:
+                return df, [masks[t].copy() for t in range(masks.shape[0])]
+            return df, None
+
         imgs, masks = self._volume_from_frames(frames)
         prog_cls = tqdm if self._verbose else _quiet_tqdm
         bs = self.cfg.get("batch_size")
