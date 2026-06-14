@@ -1,6 +1,0 @@
-# Optional trackers for csbench (same Python env as requirements.txt).
-# Install PyTorch for your platform first, then:
-#   pip install -r requirements-extra-tracking.txt
-
-trackastra
-ultrack

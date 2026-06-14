@@ -1,22 +1,6 @@
-# Local artifacts (root-level only; keep configs/experiments/)
-/checkpoints/
-/experiments/
-/old_experiment/
-/segmentation_comparison/
-/outputs/
-
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-*.egg
-
-# Slurm / logs
-slurm-*.out
-slurm-*.err
-
-# IDE / OS
+data/ctc/*/
+!data/ctc/README.md
+results/*/
+!results/summary.json
+!results/supervised_template.json
 .DS_Store
-.idea/
-.vscode/

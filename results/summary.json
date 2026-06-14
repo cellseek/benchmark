@@ -1,0 +1,33 @@
+[
+  {
+    "dataset": "PhC-C2DL-PSC",
+    "sequence": "01",
+    "status": "missing_sequence",
+    "path": "data/ctc/PhC-C2DL-PSC/01",
+    "note": "Copy CTC training data to data/ctc/ and re-run benchmark_ctc.py"
+  },
+  {
+    "dataset": "PhC-C2DL-U373",
+    "sequence": "01",
+    "status": "missing_sequence",
+    "path": "data/ctc/PhC-C2DL-U373/01"
+  },
+  {
+    "dataset": "Fluo-C2DL-MSC",
+    "sequence": "01",
+    "status": "missing_sequence",
+    "path": "data/ctc/Fluo-C2DL-MSC/01"
+  },
+  {
+    "dataset": "DIC-C2DH-HeLa",
+    "sequence": "01",
+    "status": "missing_sequence",
+    "path": "data/ctc/DIC-C2DH-HeLa/01"
+  },
+  {
+    "dataset": "Fluo-N2DH-GOWT1",
+    "sequence": "01",
+    "status": "missing_sequence",
+    "path": "data/ctc/Fluo-N2DH-GOWT1/01"
+  }
+]

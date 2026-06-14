@@ -1,0 +1,132 @@
+{
+  "description": "Published CTC benchmark scores for paper comparison tables. Sources cited in each method block.",
+  "metrics": {
+    "LNK": "Cell Linking Benchmark linking accuracy (CTC 2024, ISBI). Evaluated on standardized imperfect segmentations.",
+    "OP": "Overall performance = 0.5 * (SEG + TRA) on CTC training sequences (Ulman et al. 2017).",
+    "TRA": "Tracking accuracy (AOGM-normalized).",
+    "SEG": "Segmentation accuracy (mean matched IoU)."
+  },
+  "linking_benchmark": {
+    "source": "CTC Cell Linking Benchmark, ISBI 2024; aggregated in Hsieh et al. arXiv:2509.09943 Table 1",
+    "note": "LNK scores use provided (imperfect) segmentations, not end-to-end pipelines.",
+    "methods": [
+      {
+        "name": "Trackastra-general (EPFL-CH)",
+        "citation": "gallusser2024trackastra",
+        "tuning": "None (pretrained general_2d)",
+        "scores": {
+          "PhC-C2DL-PSC": 0.992,
+          "Fluo-C2DL-MSC": 0.947,
+          "Fluo-N2DH-GOWT1": 0.986,
+          "DIC-C2DH-HeLa": null,
+          "PhC-C2DL-U373": null
+        }
+      },
+      {
+        "name": "KTH-SE (1)",
+        "citation": "ulman2017object",
+        "tuning": "GT-optimized linking parameters",
+        "scores": {
+          "PhC-C2DL-PSC": 0.991,
+          "Fluo-C2DL-MSC": 0.921,
+          "Fluo-N2DH-GOWT1": 0.978
+        },
+        "rank_note": "2nd PSC, 3rd MSC and GOWT1"
+      },
+      {
+        "name": "MON-AU (3)",
+        "citation": "hsieh2025samcelltracking",
+        "tuning": "Flow-network linking",
+        "scores": {
+          "PhC-C2DL-PSC": 0.991
+        },
+        "rank_note": "3rd PSC"
+      },
+      {
+        "name": "PAST-FR (4)",
+        "citation": "hsieh2025samcelltracking",
+        "tuning": "Optical-flow Kalman linking",
+        "scores": {
+          "PhC-C2DL-PSC": null,
+          "mean_13_datasets": 0.984
+        },
+        "rank_note": "1st mean LNK across 13 datasets"
+      },
+      {
+        "name": "TrackMate / Mastodon",
+        "citation": "ershov2022trackmate",
+        "tuning": "Per-dataset detector + linker config",
+        "scores": {
+          "note": "Official CLB baseline on celltrackingchallenge.net/latest-clb-results/"
+        }
+      }
+    ]
+  },
+  "end_to_end_tracking": {
+    "source": "Ulman et al. Nat Methods 2017 Table 4 (OP on CTC training data, 2015--2017 challenge)",
+    "note": "Legacy CTC winners; typically require 3--20 tunable parameters per dataset.",
+    "methods": [
+      {
+        "name": "FR-Ro-GE",
+        "citation": "ulman2017object",
+        "params": 4,
+        "scores": {
+          "DIC-C2DH-HeLa": {"OP": 0.828},
+          "Fluo-C2DL-MSC": {"OP": 0.636},
+          "Fluo-N2DH-GOWT1": null,
+          "PhC-C2DH-U373": {"OP": 0.951},
+          "PhC-C2DL-PSC": null
+        }
+      },
+      {
+        "name": "KTH-SE (1)",
+        "citation": "ulman2017object",
+        "params": 17,
+        "scores": {
+          "DIC-C2DH-HeLa": null,
+          "Fluo-C2DL-MSC": {"OP": 0.676},
+          "Fluo-N2DH-GOWT1": {"OP": 0.951},
+          "PhC-C2DH-U373": null,
+          "PhC-C2DL-PSC": {"OP": 0.772}
+        }
+      },
+      {
+        "name": "HD-Hau-GE",
+        "citation": "ulman2017object",
+        "params": 15,
+        "scores": {
+          "PhC-C2DL-PSC": {"OP": 0.804}
+        }
+      },
+      {
+        "name": "KIT-GE (3)",
+        "citation": "maska2023ctc",
+        "params": "Dataset-specific DL",
+        "scores": {
+          "note": "Top-ranked CTB method globally (2023 review); per-dataset SEG/TRA in CTC supplementary data"
+        }
+      },
+      {
+        "name": "KIT-GE (4) / EmbedTrack",
+        "citation": "loeffler2022embedtrack",
+        "params": "Dataset-specific DL",
+        "scores": {
+          "note": "Top-3 CTB method globally (2023 review)"
+        }
+      }
+    ]
+  },
+  "trackastra_component": {
+    "source": "Gallusser & Weigert ECCV 2024",
+    "scores": {
+      "DIC-C2DH-HeLa": {"TRA": 0.895},
+      "DeepCell": {"TRA": 0.991},
+      "Bacteria_MOT": {"TRA": 0.999}
+    },
+    "note": "Component-level; uses GT or specialized segmentations, not full CellSeek pipeline"
+  },
+  "cellseek_auto": {
+    "note": "Fill from results/summary.json after running benchmark_ctc.py",
+    "scores": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "dataset": "PhC-C2DL-PSC",
+  "sequence": "01",
+  "auto_tra": null,
+  "supervised_tra": null,
+  "time_minutes": null,
+  "frames_corrected": null,
+  "total_frames": null,
+  "notes": "Fill after completing one supervised GUI pass. Re-run benchmark on exported masks for supervised_tra, or record manually."
+}
