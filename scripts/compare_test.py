@@ -13,13 +13,16 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from pathlib import Path
-import logging
 
 import numpy as np
 
-from cellseek_benchmark.io_utils import dump_json, ensure_dir, load_yaml
-from cellseek_benchmark.metrics.tracking import eval_tracking_hota
-from cellseek_benchmark.registry import DATASET_REGISTRY, MODEL_REGISTRY
+from benchmark.config_loader import load_benchmark_configs
+from benchmark.io_utils import dump_json, ensure_dir
+from benchmark.mask_tracks import tracks_from_label_masks_hungarian
+from benchmark.metrics.tracking import eval_tracking_hota
+from benchmark.registry import DATASET_REGISTRY, MODEL_REGISTRY
+from benchmark.summary_utils import simple_tracking_summary
+from benchmark.trackastra_linking import link_masks_with_trackastra
 
 
 def _resolve_single_run(bench_cfg: dict, dataset: str | None, model: str | None) -> tuple[str, str]:
@@ -72,32 +75,38 @@ def _run_cellseek_gt_seed_sequence(model_adapter, seq):
     ]
     pred_masks[seed_idx] = seed_mask.copy()
 
-    # Match CellSeek adapter's propagation choice.
-    if getattr(model_adapter, "_tracking_propagation", "cellsam") == "cutie":
-        logging.getLogger("cutie.inference.inference_core").setLevel(logging.ERROR)
-        tracker = model_adapter._new_mask_tracker()
-        prev_rgb = model_adapter._to_cutie_rgb_uint8(frames[seed_idx])
+    # Match CellSeek adapter propagation (Trackastra link or per-frame CellSAM).
+    if getattr(model_adapter, "_tracking_propagation", "cellsam") == "trackastra":
+        prev_image = frames[seed_idx]
         prev_lab = seed_mask.astype(np.int32, copy=False)
         for t in range(seed_idx + 1, len(frames)):
             gt_t = loaded_gt_masks[t]
             if gt_t is not None:
                 pred_masks[t] = gt_t.copy()
-                prev_rgb = model_adapter._to_cutie_rgb_uint8(frames[t])
+                prev_image = frames[t]
                 prev_lab = gt_t.astype(np.int32, copy=False)
                 continue
 
-            # No object to propagate: skip tracker call to avoid CUTIE warning spam.
             if int(np.max(prev_lab)) <= 0:
-                pred_masks[t] = np.zeros(frames[t].shape[:2], dtype=np.int32)
-                prev_rgb = model_adapter._to_cutie_rgb_uint8(frames[t])
+                pred_masks[t] = model_adapter.predict_mask(frames[t]).astype(np.int32, copy=False)
+                prev_image = frames[t]
+                prev_lab = pred_masks[t]
                 continue
 
-            rgb_u8 = model_adapter._to_cutie_rgb_uint8(frames[t])
-            cu = tracker.track(prev_rgb, prev_lab, rgb_u8)
-            lab = np.asarray(cu).astype(np.int32, copy=False)
-            pred_masks[t] = lab.copy()
-            prev_rgb = rgb_u8
-            prev_lab = lab
+            current_mask = model_adapter.predict_mask(frames[t]).astype(np.int32, copy=False)
+            if int(np.max(current_mask)) <= 0:
+                pred_masks[t] = current_mask.copy()
+            else:
+                pred_masks[t] = link_masks_with_trackastra(
+                    prev_image,
+                    prev_lab,
+                    frames[t],
+                    current_mask,
+                    model=getattr(model_adapter, "_trackastra_model", None),
+                    track_mode=getattr(model_adapter, "_trackastra_mode", "greedy_nodiv"),
+                )
+            prev_image = frames[t]
+            prev_lab = pred_masks[t]
     else:
         for t in range(seed_idx + 1, len(frames)):
             # Non-CUTIE mode: if GT mask exists, use it directly; otherwise predict.
@@ -138,12 +147,11 @@ def main():
     )
     args = p.parse_args()
 
-    config_dir = args.config_dir.resolve()
-    bc = Path(args.benchmark_config)
-    bench_path = bc.resolve() if bc.is_absolute() else (config_dir / bc).resolve()
-    bench_cfg = load_yaml(bench_path)
-    datasets_cfg = load_yaml(config_dir / Path(bench_cfg.get("datasets_config", "datasets.yaml")).name)["datasets"]
-    models_cfg = load_yaml(config_dir / Path(bench_cfg.get("models_config", "models.yaml")).name)["models"]
+    loaded = load_benchmark_configs(args.config_dir.resolve(), args.benchmark_config)
+    bench_cfg = loaded.bench_cfg
+    bench_path = loaded.bench_path
+    datasets_cfg = loaded.datasets_cfg
+    models_cfg = loaded.models_cfg
 
     dataset_name, model_name = _resolve_single_run(bench_cfg, args.dataset, args.model)
     if model_name != "cellseek":
@@ -179,13 +187,18 @@ def main():
             continue
         try:
             pred_masks = _run_cellseek_gt_seed_sequence(model_adapter, seq)
-            pred_tracks = model_adapter._tracks_df_from_masks(pred_masks)
+            pred_tracks = tracks_from_label_masks_hungarian(
+                pred_masks,
+                match_radius_px=float(getattr(model_adapter, "match_radius_px", 30.0)),
+            )
             scores = eval_tracking_hota(
-                seq.gt_tracks, pred_tracks, match_radius_px=float(args.match_radius_px)
+                seq.gt_tracks,
+                pred_tracks,
+                match_radius_px=float(args.match_radius_px),
             )
             per_seq.append({"seq_id": seq.seq_id, **scores})
             print(
-                f"compare_test: {seq.seq_id} HOTA={scores['HOTA']:.4f} "
+                f"compare_test: {seq.seq_id} Cell-HOTA={scores['Cell-HOTA']:.4f} "
                 f"DetA={scores['DetA']:.4f} AssA={scores['AssA']:.4f}",
                 flush=True,
             )
@@ -193,27 +206,7 @@ def main():
             per_seq.append({"seq_id": seq.seq_id, "error": str(e)})
             print(f"compare_test: {seq.seq_id} ERROR: {e}", flush=True)
 
-    valid = [r for r in per_seq if "HOTA" in r]
-    if valid:
-        summary = {
-            "HOTA": float(sum(r["HOTA"] for r in valid) / len(valid)),
-            "DetA": float(sum(r["DetA"] for r in valid) / len(valid)),
-            "AssA": float(sum(r["AssA"] for r in valid) / len(valid)),
-            "TA": float(sum(r["TA"] for r in valid) / len(valid)),
-            "n_sequences_total": len(per_seq),
-            "n_sequences_scored": len(valid),
-            "n_sequences_error": len(per_seq) - len(valid),
-        }
-    else:
-        summary = {
-            "HOTA": None,
-            "DetA": None,
-            "AssA": None,
-            "TA": None,
-            "n_sequences_total": len(per_seq),
-            "n_sequences_scored": 0,
-            "n_sequences_error": len(per_seq),
-        }
+    summary = simple_tracking_summary(per_seq)
 
     dump_json({"summary": summary, "per_sequence": per_seq}, out_dir / "tracking.json")
     dump_json(

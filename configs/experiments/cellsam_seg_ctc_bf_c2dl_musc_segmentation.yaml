@@ -1,7 +1,7 @@
 # CellSAM segmentation on CTC BF-C2DL-MuSC — GT from SEG/man_seg only (sparse).
 # Slurm: sbatch sbatch_segmentation.sh
 # CLI:
-#   python -m cellseek_benchmark.test --config-dir configs \
+#   python -m benchmark.test --config-dir configs \
 #     --benchmark-config experiments/cellsam_seg_ctc_bf_c2dl_musc_segmentation.yaml
 
 experiment_id: cellsam_seg_ctc_bf_c2dl_musc_segmentation

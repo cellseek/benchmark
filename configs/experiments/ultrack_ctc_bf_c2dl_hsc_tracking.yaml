@@ -1,5 +1,5 @@
 # Default tracking experiment (CTC). Run:
-#   csbench --config-dir configs --benchmark-config experiments/cellseek_ctc_bf_c2dl_hsc_tracking.yaml
+#   python -m benchmark.test --config-dir configs --benchmark-config experiments/cellseek_ctc_bf_c2dl_hsc_tracking.yaml
 
 experiment_id: ultrack_ctc_bf_c2dl_hsc_tracking
 

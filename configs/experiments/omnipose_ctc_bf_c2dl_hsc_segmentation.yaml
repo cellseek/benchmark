@@ -1,7 +1,7 @@
 # Omnipose segmentation on CTC BF-C2DL-HSC — GT from SEG/man_seg only (sparse, ~57 frames).
 # Slurm: sbatch sbatch.sh
 # CLI:
-#   python -m cellseek_benchmark.test --config-dir configs \
+#   python -m benchmark.test --config-dir configs \
 #     --benchmark-config experiments/omnipose_ctc_bf_c2dl_hsc_segmentation.yaml
 
 experiment_id: omnipose_ctc_bf_c2dl_hsc_segmentation

@@ -1,0 +1,13 @@
+# Processed_data tracking experiment. Run:
+#   python -m benchmark.test --config-dir configs --benchmark-config experiments/cellseek_processed_bf_mda_mb_breast_cell_tracking.yaml
+
+experiment_id: cellseek_processed_bf_mda_mb_breast_cell_tracking
+output_parent: experiments/processed_data_tracking
+
+dataset: processed_bf_mda_mb_breast_cell
+model: cellseek
+tasks: tracking
+
+datasets_config: datasets.yaml
+models_config: models.yaml
+metrics_config: metrics.yaml

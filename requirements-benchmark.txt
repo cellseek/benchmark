@@ -1,0 +1,35 @@
+# Unified pip dependencies for conda env ``benchmark`` (see environment.yml).
+# PyTorch/torchvision: installed via conda in environment.yml.
+# Pip-only: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+
+# core
+numpy<2
+pandas
+scipy
+scikit-image
+pyyaml
+tqdm
+tifffile
+opencv-python<4.11
+pycocotools>=2.0.6
+
+# cellseek / cellpose / cellsam_seg / microsam
+cellpose>=4.0
+segment-anything
+
+# tracking linkers
+trackastra
+ultrack
+
+# celltractr (native Trackformer; compile ops via scripts/setup_celltractr.sh)
+sacred
+ffmpeg-python
+fvcore
+ninja
+matplotlib
+
+# segmentation
+omnipose
+
+# sam3
+sam3==0.1.4

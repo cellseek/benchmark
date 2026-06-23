@@ -4,14 +4,10 @@ segmentation:
   report: [precision, recall, f1]
 
 tracking:
-  report: [TA, HOTA, DetA, AssA]
-  # Single radius for every model (do not tune per model).
+  report: [Cell-HOTA, DetA, AssA]
   match_radius_px: 20.0
-  # Drop short spurious pred tracks (same rule for all models).
   pred_min_track_frames: 2
-  # Optional mask F1 on frames with SEG GT during tracking pass.
   mask_metrics_on_tracking: true
-  # OOM fallback: same cap for every model when a sequence exhausts GPU memory.
   oom_fallback_max_frames: 300
   frame_length_buckets:
     - {name: len_le_100, max_frames: 100}

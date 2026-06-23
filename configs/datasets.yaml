@@ -1,5 +1,19 @@
 # Segmentation: cellpose, BBBC038. CTC segmentation GT: ``<split>_GT/SEG/man_seg*.tif`` (sparse).
 
+x-ctc-defaults: &ctc_defaults
+  type: ctc_cell_tracking
+  root: /project/cellseek/cell_tracking
+  splits: [01, 02]
+
+x-ctc-filtered-tracks: &ctc_filtered_tracks
+  <<: *ctc_defaults
+  tracking_sequence_json: man_track_filtered.json
+
+x-processed-ctc-defaults: &processed_ctc_defaults
+  type: ctc_cell_tracking
+  root: /project/cellseek/mcf_mda_a549_beas/processed_data
+  tracking_sequence_json: man_track_filtered.json
+
 datasets:
   cellpose:
     type: cellpose
@@ -16,63 +30,61 @@ datasets:
 
   # Tracking: sub-sequences from <split>_GT/TRA/man_track_filtered.json (Sequences[]).
   ctc_bf_c2dl_hsc:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_filtered_tracks
     datasets: [BF-C2DL-HSC]
-    splits: [01, 02]
-    tracking_sequence_json: man_track_filtered.json
 
   ctc_bf_c2dl_musc:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_filtered_tracks
     datasets: [BF-C2DL-MuSC]
-    splits: [01, 02]
-    tracking_sequence_json: man_track_filtered.json
+
+  processed_bf_a549_lung_cell:
+    <<: *processed_ctc_defaults
+    datasets: [BF-A549-Lung_cell]
+    splits: [01, 02, 03, 04]
+
+  processed_bf_beas_2b_lung_cell:
+    <<: *processed_ctc_defaults
+    datasets: [BF-BEAS-2B-Lung_cell]
+    splits: [01, 02, 03]
+
+  processed_bf_mcf_10a_breast_cell:
+    <<: *processed_ctc_defaults
+    datasets: [BF-MCF-10A-Breast_cell]
+    splits: [01, 02, 03, 04]
+
+  processed_bf_mda_mb_breast_cell:
+    <<: *processed_ctc_defaults
+    datasets: [BF-MDA-MB-Breast_cell]
+    splits: [01, 02, 03, 04]
 
   ctc_dic_c2dh_hela:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_defaults
     datasets: [DIC-C2DH-HeLa]
-    splits: [01, 02]
 
   ctc_fluo_c2dl_huh7:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_defaults
     datasets: [Fluo-C2DL-Huh7]
-    splits: [01, 02]
 
   ctc_fluo_c2dl_msc:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_defaults
     datasets: [Fluo-C2DL-MSC]
-    splits: [01, 02]
 
   ctc_fluo_n2dh_gowt1:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_defaults
     datasets: [Fluo-N2DH-GOWT1]
-    splits: [01, 02]
 
   ctc_fluo_n2dh_simplus:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_defaults
     datasets: [Fluo-N2DH-SIM+]
-    splits: [01, 02]
 
   ctc_fluo_n2dl_hela:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_defaults
     datasets: [Fluo-N2DL-HeLa]
-    splits: [01, 02]
 
   ctc_phc_c2dh_u373:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_defaults
     datasets: [PhC-C2DH-U373]
-    splits: [01, 02]
 
   ctc_phc_c2dl_psc:
-    type: ctc_cell_tracking
-    root: /project/cellseek/cell_tracking
+    <<: *ctc_defaults
     datasets: [PhC-C2DL-PSC]
-    splits: [01, 02]

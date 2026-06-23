@@ -4,13 +4,14 @@ models:
     enabled: true
     use_gpu: true
     checkpoint_path: null
-    # Default: CellSAM seed + mask propagation (not per-frame cellsam).
-    tracking_propagation: cutie
+    # Default: CellSAM segment + Trackastra link (same pipeline as the GUI).
+    tracking_propagation: trackastra
     tracking_seed_search_frames: 5
-    tracking_cutie_consecutive_empty_stop: 10
+    trackastra_mode: greedy_nodiv
+    trackastra_pretrained: general_2d
+    trackastra_device: automatic
 
-  # CellSAM-only (per-frame ``predict_mask``). Same adapter as cellseek but ``tracking_propagation: cellsam``
-  # so CUTIE weights are not resolved at init — use for CTC segmentation (default GT: SEG/man_seg).
+  # CellSAM-only (per-frame ``predict_mask``). Same adapter as cellseek but ``tracking_propagation: cellsam``.
   cellsam_seg:
     type: cellseek
     enabled: true
@@ -42,7 +43,7 @@ models:
   microsam:
     type: microsam
     enabled: true
-    checkpoint_path: /home/fzhaoai/cellseek/cellseek_benchmark/checkpoints/microsam_vit_b_lm.pt
+    checkpoint_path: ../checkpoints/microsam_vit_b_lm.pt
     pred_iou_thresh: 0.35
     stability_score_thresh: 0.65
     match_radius_px: 80
@@ -103,9 +104,10 @@ models:
   celltractr:
     type: celltractr
     enabled: true
-    delegate_tracker: trackastra
-    shared_segmentation_backend: fallback
-    pretrained: general_2d
-    track_mode: greedy
-    device: automatic
-    verbose: false
+    # Native Trackformer pipeline. Source repo stays outside benchmark; weights are local.
+    # Setup: conda activate benchmark && bash scripts/setup_celltractr.sh
+    celltractr_repo: /home/fzhaoai/cellseek/Cell-TRACTR
+    preset: deepcell  # deepcell (mammalian) | moma (bacteria)
+    checkpoint_path: checkpoints/celltractr/checkpoint_deepcell.pth
+    device: cuda
+    use_img_for_mask: true

@@ -12,7 +12,7 @@ Run from the benchmark repo root (directory that contains ``configs/``):
 
 Then copy ``configs/`` (including ``experiments/``) to a folder (for example
 ``configs_subset/``), set dataset roots in ``datasets.yaml`` to this subset directory,
-and run ``csbench --config-dir`` that folder with ``--benchmark-config experiments/<name>.yaml``.
+and run ``python -m benchmark.test --config-dir`` that folder with ``--benchmark-config experiments/<name>.yaml``.
 """
 
 from __future__ import annotations
@@ -227,7 +227,7 @@ def main() -> None:
     print(f"\nDone. Subset root: {dest}")
     print("Update dataset roots in a copy of configs/ to point here, then run:")
     print(
-        "  csbench --config-dir <your_configs_dir> "
+        "  python -m benchmark.test --config-dir <your_configs_dir> "
         "--benchmark-config experiments/<your_experiment>.yaml"
     )
 

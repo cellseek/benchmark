@@ -28,11 +28,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cellseek_benchmark*"]
-
-[project.scripts]
-csbench = "cellseek_benchmark.test:main"
+include = ["benchmark*"]
 
 [project.optional-dependencies]
-omnipose = ["omnipose"]
-cellseek-tracking = ["cellsam"]
+all = ["cellpose>=4.0", "segment-anything", "trackastra", "ultrack", "omnipose"]
