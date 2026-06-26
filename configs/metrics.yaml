@@ -1,0 +1,15 @@
+segmentation:
+  iou_thresholds: [0.5]
+  min_object_area: 0
+  report: [precision, recall, f1]
+
+tracking:
+  report: [Cell-HOTA, DetA, AssA]
+  match_radius_px: 20.0
+  pred_min_track_frames: 2
+  mask_metrics_on_tracking: true
+  oom_fallback_max_frames: 300
+  frame_length_buckets:
+    - {name: len_le_100, max_frames: 100}
+    - {name: len_101_300, min_frames: 101, max_frames: 300}
+    - {name: len_gt_300, min_frames: 301}

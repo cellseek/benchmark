@@ -1,0 +1,15 @@
+# Default tracking experiment (CTC). Run:
+#   python -m benchmark.test --config-dir configs --benchmark-config experiments/cellseek_ctc_bf_c2dl_hsc_tracking.yaml
+
+experiment_id: celltractr_ctc_bf_c2dl_musc_tracking
+
+# Run outputs: experiments/<experiment_id>_<YYYYMMDD_HHMMSS>/ (override parent below).
+output_parent: experiments
+
+dataset: ctc_bf_c2dl_musc
+model: celltractr
+tasks: tracking
+
+datasets_config: datasets.yaml
+models_config: models.yaml
+metrics_config: metrics.yaml

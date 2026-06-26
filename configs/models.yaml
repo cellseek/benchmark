@@ -1,0 +1,113 @@
+models:
+  cellseek:
+    type: cellseek
+    enabled: true
+    use_gpu: true
+    checkpoint_path: null
+    # Default: CellSAM segment + Trackastra link (same pipeline as the GUI).
+    tracking_propagation: trackastra
+    tracking_seed_search_frames: 5
+    trackastra_mode: greedy_nodiv
+    trackastra_pretrained: general_2d
+    trackastra_device: automatic
+
+  # CellSAM-only (per-frame ``predict_mask``). Same adapter as cellseek but ``tracking_propagation: cellsam``.
+  cellsam_seg:
+    type: cellseek
+    enabled: true
+    use_gpu: true
+    checkpoint_path: null
+    tracking_propagation: cellsam
+
+  cellpose:
+    type: cellpose
+    enabled: true
+    pretrained_model: cpsam
+
+  omnipose:
+    type: omnipose
+    enabled: true
+    use_gpu: true
+    model_type: cyto2_omni
+    net_avg: false
+    tile: true
+
+  sam3:
+    type: sam3
+    enabled: true
+    prompt: cell
+    checkpoint_path: /home/fzhaoai/.cache/models--facebook--sam3/snapshots/2afe64078f4420bdfbc063162d1336003efadc81/sam3.pt
+    tracking_max_long_edge: 1024
+    tracking_offload_image_model: true
+
+  microsam:
+    type: microsam
+    enabled: true
+    checkpoint_path: ../checkpoints/microsam_vit_b_lm.pt
+    pred_iou_thresh: 0.35
+    stability_score_thresh: 0.65
+    match_radius_px: 80
+    tracking_min_mask_area: 50
+    tracking_max_mask_area: null
+    tracking_max_instances_per_frame: 24
+
+  trackastra:
+    type: trackastra
+    enabled: true
+    # Per-frame masks before linking: fallback (Otsu) | cellseek (CellSAM, fair linker sub-board).
+    shared_segmentation_backend: fallback
+    pretrained: general_2d
+    track_mode: greedy
+    device: automatic
+    verbose: false
+    delta_t: 1
+
+  # Linker sub-board: same CellSAM masks as cellseek, then Trackastra linking.
+  trackastra_shared_cellseek:
+    type: trackastra
+    enabled: true
+    shared_segmentation_backend: cellseek
+    shared_cellseek_config:
+      checkpoint_path: null
+      use_gpu: true
+    pretrained: general_2d
+    track_mode: greedy
+    device: automatic
+    verbose: false
+    delta_t: 1
+
+  ultrack:
+    type: ultrack
+    enabled: true
+    shared_segmentation_backend: fallback
+    labels_to_contours_sigma: 1.0
+    linking_max_distance: 15.0
+    max_neighbors: 5
+    solver_name: ""
+    time_limit: 300
+    window_size: 64
+
+  ultrack_shared_cellseek:
+    type: ultrack
+    enabled: true
+    shared_segmentation_backend: cellseek
+    shared_cellseek_config:
+      checkpoint_path: null
+      use_gpu: true
+    labels_to_contours_sigma: 1.0
+    linking_max_distance: 15.0
+    max_neighbors: 5
+    solver_name: ""
+    time_limit: 300
+    window_size: 64
+
+  celltractr:
+    type: celltractr
+    enabled: true
+    # Native Trackformer pipeline. Source repo stays outside benchmark; weights are local.
+    # Setup: conda activate benchmark && bash scripts/setup_celltractr.sh
+    celltractr_repo: /home/fzhaoai/cellseek/Cell-TRACTR
+    preset: deepcell  # deepcell (mammalian) | moma (bacteria)
+    checkpoint_path: checkpoints/celltractr/checkpoint_deepcell.pth
+    device: cuda
+    use_img_for_mask: true
